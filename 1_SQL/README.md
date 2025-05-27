@@ -178,7 +178,7 @@ GROUP BY agent_name;
 
 ## 🔗 Joins
 
-   ![alt text](Images/1_sql_joins.png)
+   ![alt text](../Images/1_sql_joins.png)
 
 ```sql
 -- Inner Join (extract rows where id columns in both tables match)
