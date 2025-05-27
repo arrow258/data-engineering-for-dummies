@@ -178,12 +178,14 @@ GROUP BY agent_name;
 
 ## 🔗 Joins
 
+   ![alt text](Images/1_sql_joins.svg)
+
 ```sql
--- Inner Join
+-- Inner Join (extract rows where id columns in both tables match)
 SELECT * FROM users u
 INNER JOIN orders o ON u.id = o.user_id;
 
--- Left Join
+-- Left Join 
 SELECT * FROM users u
 LEFT JOIN orders o ON u.id = o.user_id;
 
@@ -195,11 +197,11 @@ RIGHT JOIN orders o ON u.id = o.user_id;
 SELECT * FROM users u
 FULL OUTER JOIN orders o ON u.id = o.user_id;
 
--- Cross Join
+-- Cross Join - creates all possible combinations (many to many mapping)
 SELECT * FROM users u
 CROSS JOIN orders o;
 
--- Natural Join
+-- Natural Join (a type of inner join but only the common columns are retained. ie, not all the columns that are mutually exclusive to either tables)
 SELECT * FROM users
 NATURAL JOIN orders;
 ```
@@ -225,6 +227,87 @@ FROM carPurchaseLog
 GROUP BY agent_name
 HAVING total_sales > 1;
 ```
+
+---
+
+## Case & If-Else
+**🔹 CASE** 
+```sql
+-- Example: Label sales into categories
+SELECT transaction_id, price,
+  CASE 
+    WHEN price > 30000 THEN 'High'
+    WHEN price BETWEEN 20000 AND 30000 THEN 'Medium'
+    ELSE 'Low'
+  END AS price_category
+FROM carPurchaseLog;
+```
+
+**🔹 IF-ELSE** 
+```sql
+-- only used inside stored procedures
+CREATE PROCEDURE CheckPrice(IN price_input FLOAT)
+BEGIN
+  IF price_input > 30000 THEN
+    SELECT 'High Value';
+  ELSEIF price_input BETWEEN 20000 AND 30000 THEN
+    SELECT 'Medium Value';
+  ELSE
+    SELECT 'Low Value';
+  END IF;
+END;
+
+CALL CheckPrice(25000);
+```
+
+**🔹 WHILE** 
+```sql
+CREATE PROCEDURE CountDown()
+BEGIN
+  DECLARE counter INT DEFAULT 5;
+  WHILE counter > 0 DO
+    SELECT CONCAT('Countdown: ', counter);
+    SET counter = counter - 1;
+  END WHILE;
+END;
+
+CALL CountDown();
+```
+
+**🔹 LOOP** 
+```sql
+-- An infinite loop unless terminated with LEAVE.
+CREATE PROCEDURE SimpleLoop()
+BEGIN
+  DECLARE i INT DEFAULT 1;
+  loop_label: LOOP
+    IF i > 3 THEN
+      LEAVE loop_label;
+    END IF;
+    SELECT CONCAT('Iteration ', i);
+    SET i = i + 1;
+  END LOOP;
+END ;
+
+CALL SimpleLoop();
+```
+
+**🔹 REPEAT UNTIL** 
+```sql
+-- Similar to do...while. Executes the block at least once.
+CREATE PROCEDURE RepeatExample()
+BEGIN
+  DECLARE i INT DEFAULT 1;
+  REPEAT
+    SELECT CONCAT('Repeat Iteration ', i);
+    SET i = i + 1;
+  UNTIL i > 3
+  END REPEAT;
+END;
+
+CALL RepeatExample();
+```
+
 
 ---
 
@@ -261,8 +344,21 @@ SELECT * FROM carPurchaseLog ORDER BY price DESC;
 
 ## 🪟 Window Functions
 
+What is a Window Function in SQL?
+A **window function** performs calculations across a "window" (subset) of rows that are related to the current row — **without collapsing** the result into a single row (unlike `GROUP BY`).
+
+---
+
+#### 🧠 Key Concepts
+
+- `OVER()` — defines the window (i.e., the rows to compare with).
+- You can **partition** rows (like GROUP BY) and **order** them too.
+- Common use cases: rankings, running totals, moving averages, percentiles.
+
+
+
 ```sql
--- Rank by sales
+-- Rank agents by number of sales
 SELECT agent_name, COUNT(*) AS sales,
        RANK() OVER (ORDER BY COUNT(*) DESC) AS rank
 FROM carPurchaseLog
@@ -273,7 +369,116 @@ SELECT purchase_date, price,
        SUM(price) OVER (ORDER BY purchase_date) AS running_total
 FROM carPurchaseLog;
 
--- Row number
+-- Row number using Partition
 SELECT *, ROW_NUMBER() OVER (PARTITION BY agent_name ORDER BY purchase_date) AS row_num
 FROM carPurchaseLog;
+```
+
+---
+
+## ⚙️ Stored Procedures
+
+A stored procedure is a named block of SQL code saved in the database. It allows you to reuse logic, reduce repetitive queries, and improve performance by reducing client-server round trips.
+
+Stored procedures support parameters of three types:
+
+| Type    | Description                                           |
+|---------|-------------------------------------------------------|
+| IN      | Passes a value into the procedure (default)           |
+| OUT     | Returns a value from the procedure                    |
+| INOUT   | Accepts a value, modifies it, and returns it back     |
+
+Why use stored procedures?
+- 📦 Reusability: Centralize common logic once and reuse it anywhere.
+- 🚀 Performance: Reduce data traffic between application and server.
+- 🔒 Security: Give users access to procedures without exposing raw data.
+
+
+**🔹 IN** 
+```sql
+-- IN: Takes an input value and uses it inside the procedure
+CREATE PROCEDURE GetAgentSales(IN agent_name_input VARCHAR(100))
+BEGIN
+  SELECT * FROM carPurchaseLog
+  WHERE agent_name = agent_name_input;
+END ;
+
+CALL GetAgentSales('Jane');
+```
+
+**🔹 OUT** 
+```sql
+-- OUT: Outputs a value from within the procedure
+CREATE PROCEDURE GetTransactionCount(OUT total INT)
+BEGIN
+  SELECT COUNT(*) INTO total FROM carPurchaseLog;
+END;
+
+CALL GetTransactionCount(@total);
+SELECT @total;
+```
+
+**🔹 INOUT** 
+```sql
+
+-- INOUT: Accepts a value, modifies it, and returns the result
+CREATE PROCEDURE AdjustPrice(INOUT price_input FLOAT)
+BEGIN
+  SET price_input = price_input * 1.10;
+END ;
+
+SET @price = 10000;
+CALL AdjustPrice(@price);
+SELECT @price;  -- returns 11000
+```
+
+## ⚠️ Error Handling in Stored Procedures
+
+SQL allows **error handling inside procedures** using `DECLARE HANDLER`. You can gracefully handle exceptions like invalid data, null values, or failed queries.
+
+---
+
+### 🔹 Types of Handlers
+
+| Type     | Description                                                                 |
+|----------|-----------------------------------------------------------------------------|
+| `CONTINUE` | Skip the error and continue with the next statement                        |
+| `EXIT`     | Exit the procedure/block immediately when an error occurs                  |
+
+---
+
+**🔹 EXIT handler (exit on error)** 
+
+```sql
+CREATE PROCEDURE InsertWithCheck(IN id_input INT)
+BEGIN
+  DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+  BEGIN
+    SELECT 'Error occurred. Procedure exiting.' AS error_msg;   -- Handles any SQL exception and prevents a full crash
+  END;
+
+  INSERT INTO test_table(id) VALUES (id_input); -- May violate PK
+END;
+
+CALL InsertWithCheck(1);
+```
+
+**🔹 CONTINUE handler (log error and keep going)**
+```sql
+CREATE PROCEDURE SafeInsertLoop()
+BEGIN
+  DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+  BEGIN
+    INSERT INTO error_log(msg) VALUES ('Failed to insert record.');
+  END;
+
+  DECLARE i INT DEFAULT 1;
+
+  WHILE i <= 3 DO
+    INSERT INTO test_table(id) VALUES (1); -- Duplicate ID. Logs the error and continues executing the loop.
+    SET i = i + 1;
+  END WHILE;
+END ;
+
+CALL SafeInsertLoop();
 ```
